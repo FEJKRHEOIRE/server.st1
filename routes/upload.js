@@ -6,16 +6,11 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Apps Script receives this payload as base64, adding about 33% overhead.
-// Keep uploads below its practical request limit and avoid large in-memory
-// buffers exhausting the Node process.
-const MAX_UPLOAD_BYTES = 35 * 1024 * 1024;
-
 // Keep files in memory only long enough to base64-encode and forward to Apps Script.
 // Nothing is ever written to disk on the backend - Drive is the only storage.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_UPLOAD_BYTES }
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB ceiling; Apps Script itself caps around ~50MB per call in practice for video
 });
 
 router.use(requireAuth, requireRole('admin'));

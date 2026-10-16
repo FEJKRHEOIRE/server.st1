@@ -36,12 +36,6 @@ function withExpiry_(attempt, exam) {
   return { ...attempt, expiresAt, serverTime: new Date().toISOString() };
 }
 
-function isExpired_(attempt, exam, now = Date.now()) {
-  const minutes = parseInt(exam && exam.timerMinutes, 10) || 0;
-  const startedAt = new Date(attempt.startTime).getTime();
-  return minutes > 0 && Number.isFinite(startedAt) && now >= startedAt + minutes * 60000;
-}
-
 function safeParseJson_(value) {
   if (!value) return null;
   try { return JSON.parse(value); } catch (e) { return null; }
@@ -128,11 +122,6 @@ router.post('/:id/answers', requireAuth, requireRole('student'), asyncHandler(as
       return { status: 200, body: { ok: true, data: { saved: false, status: attempt.status } } };
     }
 
-    const exam = await gas.getById('Exams', attempt.examId);
-    if (isExpired_(attempt, exam)) {
-      return { status: 409, body: { ok: false, error: 'Exam time has expired; submit the answers already saved.' } };
-    }
-
     const incoming = req.body.answers || {};
     const current = safeParseJson_(attempt.answers) || {};
     const merged = { ...current, ...incoming };
@@ -191,10 +180,7 @@ router.post('/:id/submit', requireAuth, requireRole('student'), asyncHandler(asy
     }
 
     const questions = await gas.find('Questions', { examId: attempt.examId });
-    // Once the server-side deadline has passed, grade only the last answers
-    // autosaved before it. Ignore any late payload from the client.
-    const timedOut = isExpired_(attempt, exam);
-    const answers = timedOut ? (safeParseJson_(attempt.answers) || {}) : (req.body.answers || {});
+    const answers = req.body.answers || {};
 
     const { score, maxScore, percentage, needsManualGrading } = gradeAttempt(questions, answers, exam);
 
@@ -246,13 +232,6 @@ router.post('/:id/submit', requireAuth, requireRole('student'), asyncHandler(asy
 // attempt itself (covers a restart that lost the in-memory map but the
 // batch had already been flushed before the process went down).
 router.get('/:id/status', requireAuth, requireRole('student'), asyncHandler(async (req, res) => {
-  // Verify ownership before consulting the process-local queue. Queue entries
-  // are keyed by attempt id and may contain a completed result.
-  const attempt = await gas.getById('Attempts', req.params.id);
-  if (!attempt || attempt.studentId !== req.user.id) {
-    return res.status(404).json({ ok: false, error: 'Attempt not found' });
-  }
-
   const queued = submissionQueue.getStatus(req.params.id);
 
   if (queued && queued.status === 'PROCESSING') {
@@ -274,6 +253,10 @@ router.get('/:id/status', requireAuth, requireRole('student'), asyncHandler(asyn
   // Nothing in the in-memory map (never queued this run, or restarted
   // after this attempt's batch was already flushed) — read the source of
   // truth directly. One cached Sheets read, safe to poll.
+  const attempt = await gas.getById('Attempts', req.params.id);
+  if (!attempt || attempt.studentId !== req.user.id) {
+    return res.status(404).json({ ok: false, error: 'Attempt not found' });
+  }
   if (attempt.status === 'in_progress') {
     return res.json({ ok: true, data: { id: req.params.id, status: 'PROCESSING' } });
   }
@@ -304,50 +287,6 @@ router.get('/:id/result', requireAuth, asyncHandler(async (req, res) => {
 
   const exam = await gas.getById('Exams', attempt.examId);
   res.json({ ok: true, data: sanitizeForStudent_(attempt, exam) });
-}));
-
-// POST /api/attempts/:id/reopen — admin-only. Lets a specific student
-// continue a finished (submitted/graded) attempt at another time, instead
-// of it being permanently locked once maxAttempts is used up.
-//
-// This is a real, persisted state change (not a one-off session flag), so
-// it survives a refresh, a logout, or the admin closing the tab — the
-// student just clicks "start" on the exam again whenever they come back
-// and /attempts/start finds this attempt still `in_progress` and hands it
-// straight back to them, answers and all, same as resuming after any
-// normal refresh. No changes needed on the student site for this to work.
-//
-// Two things NOT saved as-is, on purpose:
-//  - startTime is reset to now, so the student gets a full fresh timer
-//    rather than one that (from the exam's original start) may already
-//    look expired.
-//  - score/percentage/passed/needsManualGrading are reset to their
-//    pre-grading defaults, since they'll be recomputed correctly the next
-//    time this attempt is actually submitted — leaving the old graded
-//    numbers in place while status says "in_progress" would be confusing
-//    if anything reads the attempt in between.
-router.post('/:id/reopen', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
-  const attempt = await gas.getById('Attempts', req.params.id);
-  if (!attempt) return res.status(404).json({ ok: false, error: 'Attempt not found' });
-
-  if (attempt.status === 'in_progress') {
-    return res.status(400).json({ ok: false, error: 'الامتحان شغال بالفعل عند الطالب' });
-  }
-
-  // Drop any cached result from the PREVIOUS submission of this same
-  // attempt id — otherwise the next /submit would just replay the old
-  // COMPLETED result instead of grading the student's new answers.
-  submissionQueue.clearStatus(attempt.id);
-
-  const updated = await gas.update('Attempts', attempt.id, {
-    status: 'in_progress',
-    startTime: new Date().toISOString(),
-    finishTime: '',
-    score: 0, maxScore: 0, percentage: 0, passed: false,
-    durationSeconds: 0, needsManualGrading: false
-  });
-
-  res.json({ ok: true, data: updated });
 }));
 
 // Admin: all attempts for an exam

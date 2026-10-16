@@ -200,19 +200,6 @@ function getStatus(attemptId) {
 }
 
 /**
- * Forgets whatever this attempt's last submission resolved to (COMPLETED/
- * FAILED/PROCESSING). Needed when an admin reopens a finished attempt for
- * a student to continue: without this, the NEXT /submit for that same
- * attempt id would hit the `existingStatus.status === 'COMPLETED'` short
- * circuit in routes/attempts.js and just replay the OLD graded result
- * instead of actually re-grading the resubmission. Safe to call on an id
- * that was never queued (no-op).
- */
-function clearStatus(attemptId) {
-  statusById.delete(attemptId);
-}
-
-/**
  * Flushes ONE batch (up to BATCH_SIZE items) to Google Sheets in exactly
  * two Sheets operations total, no matter the batch size:
  *   1. gas.batchUpdate('Attempts', patches)      — the graded results
@@ -319,4 +306,4 @@ function getStats() {
 recoverFromWal_();
 if (pending.length) scheduleFlush_();
 
-module.exports = { enqueue, getStatus, clearStatus, getStats, BATCH_SIZE, FLUSH_INTERVAL_MS, WAL_PATH, WAL_DEAD_LETTER_PATH };
+module.exports = { enqueue, getStatus, getStats, BATCH_SIZE, FLUSH_INTERVAL_MS, WAL_PATH, WAL_DEAD_LETTER_PATH };

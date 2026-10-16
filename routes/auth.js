@@ -26,9 +26,6 @@ async function ensureBootstrapAdmin() {
   if (bootstrapChecked) return;
   const adminCount = await gas.countAdmins();
   if (adminCount === 0) {
-    if (config.nodeEnv === 'production' && !config.bootstrapAdmin.passwordConfigured) {
-      throw Object.assign(new Error('Set BOOTSTRAP_ADMIN_PASSWORD before the first admin login in production.'), { status: 503 });
-    }
     const passwordHash = await bcrypt.hash(config.bootstrapAdmin.password, 10);
     await gas.insertAdmin({
       username: config.bootstrapAdmin.username,

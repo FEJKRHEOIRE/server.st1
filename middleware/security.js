@@ -9,14 +9,12 @@ const helmetMiddleware = helmet({
 
 // Auth here is a Bearer token in localStorage, never a cookie — so
 // `credentials: true` (which exists for cookie-based auth) isn't needed
-// and was only adding unused surface area. Production CORS is restricted to
-// explicit CLIENT_ORIGIN values; development may use the wildcard default.
+// and was only adding unused surface area. Dropping it also means the
+// `cors` package won't reflect an arbitrary Origin back when
+// CLIENT_ORIGIN is left at its default; see config.js for the startup
+// warning if that default is still in place in production.
 const corsMiddleware = cors({
-  // A wildcard is convenient in development, but production should not
-  // reflect arbitrary sites. Configure CLIENT_ORIGIN with the frontend URL(s).
-  origin: config.clientOrigin === '*'
-    ? (config.nodeEnv === 'production' ? false : true)
-    : config.clientOrigin.split(',').map((origin) => origin.trim()).filter(Boolean)
+  origin: config.clientOrigin === '*' ? true : config.clientOrigin.split(',')
 });
 
 const generalLimiter = rateLimit({

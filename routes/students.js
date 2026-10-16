@@ -197,10 +197,7 @@ router.get('/:id/activity', asyncHandler(async (req, res) => {
         finishTime: a.finishTime
       };
     })
-    // A reopened attempt has no finishTime yet (it's in_progress again) —
-    // treat that as "now" so it sorts to the top instead of landing in an
-    // arbitrary spot next to other empty/invalid dates.
-    .sort((a, b) => (new Date(b.finishTime).getTime() || Date.now()) - (new Date(a.finishTime).getTime() || Date.now()));
+    .sort((a, b) => new Date(b.finishTime) - new Date(a.finishTime));
 
   const myComments = comments
     .filter((c) => c.authorId === req.params.id)

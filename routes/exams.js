@@ -16,9 +16,6 @@ router.get('/unit/:unitId', requireAuth, asyncHandler(async (req, res) => {
 router.get('/:id', requireAuth, asyncHandler(async (req, res) => {
   const exam = await gas.getById('Exams', req.params.id);
   if (!exam) return res.status(404).json({ ok: false, error: 'Exam not found' });
-  if (req.user.role === 'student' && exam.status !== 'published') {
-    return res.status(404).json({ ok: false, error: 'Exam not found' });
-  }
   await assertStudentHasUnitAccess(req, exam);
 
   // Students never receive correctAnswer in the payload

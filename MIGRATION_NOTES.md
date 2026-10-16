@@ -82,13 +82,6 @@ Drive. Add ONE of:
 Never commit the service-account JSON to GitHub. Never log it — nothing in
 this codebase does.
 
-For a production deployment whose Admins collection is still empty, also
-set `BOOTSTRAP_ADMIN_PASSWORD` in the platform's secret-variable settings
-before the first admin login. The server no longer writes bootstrap
-credentials to logs. Set `CLIENT_ORIGIN` to the exact frontend origin(s),
-comma-separated; cross-origin browser access is disabled in production when
-it is unset or `*`.
-
 ## Indexes
 None were required to be manually created. Every `find()` call across the
 whole project uses 1–2 plain equality (`==`) filters (audited across every

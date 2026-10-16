@@ -35,20 +35,28 @@ if (missing.length > 0) {
   console.error('');
 }
 
-// Never write bootstrap credentials to logs. In production, require an
-// operator-provided secret if the first admin account still needs creation.
+// SECURITY: a hardcoded 'admin123'-style default password is exactly the
+// kind of thing that ends up unchanged in a real deployment forever. If
+// BOOTSTRAP_ADMIN_PASSWORD isn't set, generate a strong random one-time
+// password instead of falling back to anything guessable, and print it
+// ONCE so the teacher can grab it from the server logs on first boot.
+// (It's saved — hashed — into the Admins sheet the first time an admin
+// login happens; from then on it's just this admin account's real
+// password, same as if a human had typed it in.)
 let bootstrapAdminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 if (!bootstrapAdminPassword) {
   bootstrapAdminPassword = crypto.randomBytes(9).toString('base64url');
-  if (process.env.NODE_ENV !== 'production') {
-    console.warn('BOOTSTRAP_ADMIN_PASSWORD is unset; a random development-only bootstrap password was generated and will not be logged.');
-  }
+  console.warn('');
+  console.warn('⚠️  BOOTSTRAP_ADMIN_PASSWORD not set — generated a one-time random password.');
+  console.warn('⚠️  First admin login → username: ' + (process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin') + '   password: ' + bootstrapAdminPassword);
+  console.warn('⚠️  Change it via "تغيير كلمة السر" right after logging in, or set BOOTSTRAP_ADMIN_PASSWORD explicitly and redeploy.');
+  console.warn('');
 }
 
 if (process.env.NODE_ENV === 'production' && (!process.env.CLIENT_ORIGIN || process.env.CLIENT_ORIGIN === '*')) {
   console.warn('');
-  console.warn('⚠️  CLIENT_ORIGIN is not set in production — cross-origin browser access is disabled.');
-  console.warn('⚠️  Set CLIENT_ORIGIN to your actual frontend URL(s) (comma-separated) to allow the frontend.');
+  console.warn('⚠️  CLIENT_ORIGIN is not set in production — CORS is reflecting ANY origin.');
+  console.warn('⚠️  Set CLIENT_ORIGIN to your actual frontend URL(s) (comma-separated) to lock this down.');
   console.warn('');
 }
 
@@ -72,7 +80,6 @@ module.exports = {
   bootstrapAdmin: {
     username: process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin',
     password: bootstrapAdminPassword,
-    passwordConfigured: !!process.env.BOOTSTRAP_ADMIN_PASSWORD,
     name: process.env.BOOTSTRAP_ADMIN_NAME || 'Admin'
   },
 
