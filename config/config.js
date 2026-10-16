@@ -1,0 +1,101 @@
+require('dotenv').config();
+const path = require('path');
+const crypto = require('crypto');
+
+// Validate critical env vars
+const missing = [];
+// GAS_* is still required: file/Drive operations (upload, delete, convert
+// to Slides) remain on Google Apps Script + Drive in this phase of the
+// migration — only the DATABASE moved to Firestore. See MIGRATION_NOTES.md.
+if (!process.env.GAS_ENDPOINT_URL) missing.push('GAS_ENDPOINT_URL');
+if (!process.env.GAS_API_KEY) missing.push('GAS_API_KEY');
+if (!process.env.JWT_ACCESS_SECRET) missing.push('JWT_ACCESS_SECRET');
+if (!process.env.JWT_REFRESH_SECRET) missing.push('JWT_REFRESH_SECRET');
+
+// Firebase Admin credentials: either the single FIREBASE_SERVICE_ACCOUNT
+// blob, or the three separate PROJECT_ID/CLIENT_EMAIL/PRIVATE_KEY vars.
+// This is validated here (so misconfiguration is visible on boot, in the
+// same log block as everything else) but firestoreClient.js is what
+// actually reads and uses them — never logged, never duplicated here.
+const hasFirebaseServiceAccount = !!process.env.FIREBASE_SERVICE_ACCOUNT;
+const hasFirebaseTriple = !!(
+  process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY
+);
+if (!hasFirebaseServiceAccount && !hasFirebaseTriple) {
+  missing.push('FIREBASE_SERVICE_ACCOUNT (or FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY)');
+}
+
+if (missing.length > 0) {
+  console.error('');
+  console.error('❌❌❌ MISSING ENVIRONMENT VARIABLES ❌❌❌');
+  console.error('The following variables are required but not set:');
+  missing.forEach(v => console.error('   →', v));
+  console.error('');
+  console.error('Please set them in Railway Dashboard → Variables');
+  console.error('');
+}
+
+// Never write bootstrap credentials to logs. In production, require an
+// operator-provided secret if the first admin account still needs creation.
+let bootstrapAdminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+if (!bootstrapAdminPassword) {
+  bootstrapAdminPassword = crypto.randomBytes(9).toString('base64url');
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn('BOOTSTRAP_ADMIN_PASSWORD is unset; a random development-only bootstrap password was generated and will not be logged.');
+  }
+}
+
+if (process.env.NODE_ENV === 'production' && (!process.env.CLIENT_ORIGIN || process.env.CLIENT_ORIGIN === '*')) {
+  console.warn('');
+  console.warn('⚠️  CLIENT_ORIGIN is not set in production — cross-origin browser access is disabled.');
+  console.warn('⚠️  Set CLIENT_ORIGIN to your actual frontend URL(s) (comma-separated) to allow the frontend.');
+  console.warn('');
+}
+
+module.exports = {
+  port: process.env.PORT || 4000,
+  nodeEnv: process.env.NODE_ENV || 'development',
+  clientOrigin: process.env.CLIENT_ORIGIN || '*',
+
+  gas: {
+    endpointUrl: process.env.GAS_ENDPOINT_URL,
+    apiKey: process.env.GAS_API_KEY
+  },
+
+  jwt: {
+    accessSecret: process.env.JWT_ACCESS_SECRET,
+    refreshSecret: process.env.JWT_REFRESH_SECRET,
+    accessExpires: process.env.JWT_ACCESS_EXPIRES || '15m',
+    refreshExpires: process.env.JWT_REFRESH_EXPIRES || '30d'
+  },
+
+  bootstrapAdmin: {
+    username: process.env.BOOTSTRAP_ADMIN_USERNAME || 'admin',
+    password: bootstrapAdminPassword,
+    passwordConfigured: !!process.env.BOOTSTRAP_ADMIN_PASSWORD,
+    name: process.env.BOOTSTRAP_ADMIN_NAME || 'Admin'
+  },
+
+  // ---------- Submission queue ----------
+  // See backend/services/submissionQueue.js for the full design notes.
+  submissionQueue: {
+    // How many queued submissions get flushed to Google Sheets in one
+    // batchUpdate call. Bigger = fewer Sheets operations but a longer wait
+    // for the LAST student in a batch to see COMPLETED.
+    batchSize: parseInt(process.env.SUBMISSION_BATCH_SIZE, 10) || 25,
+    // Even if the batch never fills up (low traffic), flush whatever is
+    // queued after this many ms so nobody waits indefinitely.
+    flushIntervalMs: parseInt(process.env.SUBMISSION_FLUSH_INTERVAL_MS, 10) || 3000,
+    // Retries per batch on a failed Sheets write, with short exponential
+    // backoff (NOT long artificial sleeps) between attempts.
+    maxRetries: parseInt(process.env.SUBMISSION_MAX_RETRIES, 10) || 3,
+    retryBaseDelayMs: parseInt(process.env.SUBMISSION_RETRY_BASE_DELAY_MS, 10) || 500,
+    // Local write-ahead log so a plain process restart (container restart,
+    // crash+respawn on the SAME disk) can recover submissions that were
+    // queued but not yet flushed. Does NOT survive a fresh deploy on a
+    // platform with an ephemeral filesystem, and does NOT help at all if
+    // you scale to multiple backend instances (see QUEUE_REPORT.md).
+    walEnabled: process.env.SUBMISSION_WAL_ENABLED !== 'false',
+    walPath: process.env.SUBMISSION_WAL_PATH || path.join(__dirname, '..', '.data', 'submission-queue.wal.jsonl')
+  }
+};
